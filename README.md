@@ -1,4 +1,4 @@
-#SPARC
+# SPARC
 
 This repository is setup to make figures and code available for **SPARC**, an approach for simultaneously measuring mRNA expression levels and targeted protein levels in single cells. In a paper that has been accepted we use SPARC to measure dynamic expression changes in human cells during neuronal differentiation and show that mRNA levels are poor predictors of protein abundances and activity in individual cells, indicating that the measurements are complementary. 
 
