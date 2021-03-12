@@ -1,0 +1,199 @@
+---
+title: "Figure 4"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    fig_caption: false
+  html_document:
+    toc: yes
+    toc_float:
+      
+      collapsed: no
+      smooth_scroll: no
+      fig_caption: false
+params:
+  sampleInfoRNA: ../data/figures/figure4/UU_cell_info.RData
+  geneInfoRNA: ../data/figures/figure4/UU_gene_info.RData
+  RNAinfo: ../data/figures/figure4/RPKMs.table.QC.egn.tsv
+  sampleInfoProtein: ../data/figures/figure4/UU_cell_info_protein.RData
+  geneInfoProtein: ../data/figures/figure4/UU_gene_info_protein.RData
+  ProteinInfo: ../data/figures/figure4/UU_protein_all.RData
+  ProteinCqData: ../data/figures/figure4/scProtein_0_72h_ESC_QC.txt
+  PaxDBdata: ../data/figures/figure4/PaxDB_ES.RData    
+
+
+
+
+
+---
+
+````{r setup}
+library(genefilter)
+library(patchwork)
+
+
+
+
+source("supplementaryFunctions.R")
+
+library(scales)
+rbPal <- colorRampPalette(c('cornflowerblue','grey','coral'))
+
+````
+
+
+```{r load RNA and protein info, include=FALSE}
+
+RNA_all <- data.frame(read.table(params$RNAinfo))
+load(file=params$sampleInfoRNA) # cell_info
+load(file=params$geneInfoRNA) # gene_info
+
+load(file=params$ProteinInfo) # protein_all
+load(file=params$sampleInfoProtein) # cell_info_protein
+load(file=params$geneInfoProtein) # gene_info_protein
+
+
+
+
+# FACS data
+protein_FACS = read.table(file=params$ProteinCqData)
+protein_FACS = t(protein_FACS); protein_FACS = protein_FACS[,protein_FACS['type',]=='FACS']; protein_FACS = protein_FACS[5:(dim(protein_FACS)[1]),]; class(protein_FACS) <- "numeric" 
+protein_FACS_0h = protein_FACS[,substr(colnames(protein_FACS),1,7)=='Comb_0h']
+
+```
+
+
+```{r filter data  }
+
+
+shared_cells = intersect(colnames(RNA_all), colnames(protein_all))
+shared_cells = intersect(rownames(cell_info), shared_cells)
+shared_cells = intersect(rownames(cell_info_protein), shared_cells)
+cell_info = cell_info[shared_cells, ]
+cell_info_protein = cell_info_protein[shared_cells, ]
+
+shared_genes = intersect(rownames(RNA_all), rownames(protein_all))
+
+
+
+length(rownames(RNA_all)); length(unique(rownames(RNA_all)))
+RNA_all = RNA_all[rowSums(RNA_all)>0,]
+
+
+
+```
+
+```{r time selection }
+
+filtered_cells_0h = shared_cells[(cell_info[shared_cells,'pseudotime_scorpius']>=0.8) & (cell_info[shared_cells,'pseudotime_scorpius']<1.1) & (cell_info_protein[shared_cells,'time_given']=='0h')]
+filtered_cells_24h = shared_cells[(cell_info[shared_cells,'pseudotime_scorpius']>=0.45) & (cell_info_protein[shared_cells,'pseudotime_scorpius']<0.8) & (cell_info_protein[shared_cells,'time_given']=='24h')]  
+filtered_cells_48h = shared_cells[(cell_info[shared_cells,'pseudotime_scorpius']>=0.0) & (cell_info_protein[shared_cells,'pseudotime_scorpius']<0.55) & (cell_info_protein[shared_cells,'time_given']=='48h')]
+filtered_cells_72h = rownames(cell_info_protein)[(cell_info_protein[,'time_given']=='72h')]
+filtered_cells_all = c(filtered_cells_0h, filtered_cells_24h, filtered_cells_48h)
+
+RNA_0h_filtered = RNA_all[,filtered_cells_0h]
+RNA_24h_filtered = RNA_all[,filtered_cells_24h]
+RNA_48h_filtered = RNA_all[,filtered_cells_48h]
+
+protein_0h_filtered = protein_all[,filtered_cells_0h]
+protein_24h_filtered = protein_all[,filtered_cells_24h]
+protein_48h_filtered = protein_all[,filtered_cells_48h]
+protein_72h_filtered = protein_all[,filtered_cells_72h]
+
+```
+
+
+```{r filter 2 }
+# further filtering (low protein abundance, cell cycle, etc.)
+
+data_RNA = RNA_0h_filtered[,intersect(colnames(RNA_0h_filtered), rownames(cell_info))]
+
+data_protein = protein_0h_filtered[,intersect(colnames(protein_0h_filtered), rownames(cell_info))] # looks better
+
+data_protein = data_protein[rowMeans(data_protein)!=0,]
+
+low_abundance_filter = intersect(rownames(data_protein), rownames(protein_FACS_0h)[rank(rowMeans(protein_FACS_0h))>6])
+data_protein = data_protein[low_abundance_filter,]
+
+data_RNA = data_RNA[rownames(data_protein),]
+
+```
+
+
+```{r gene expression noise analysis }
+data_median_RNA = rowMeans(data_RNA)
+data_variation_RNA = (rowSds(as.matrix(data_RNA))/rowMeans(data_RNA))**2
+data_residuals_RNA = own_residuals(data_median_RNA, data_variation_RNA, log=T, p=3)[[2]]
+
+data_median_protein = rowMeans(data_protein)
+data_variation_protein = (rowSds(data_protein)/rowMeans(data_protein))**2
+data_residuals_protein = own_residuals(data_median_protein, data_variation_protein, log=T, p=3)[[2]]
+
+shared_genes = intersect(names(data_residuals_RNA), names(data_residuals_protein))
+
+load(file=params$PaxDBdata)
+
+shared_genes_PaxDB = intersect(shared_genes, rownames(PaxDB_ES))
+
+noise_ratio = (data_residuals_protein[shared_genes_PaxDB]) - (data_residuals_RNA[shared_genes_PaxDB]) - median(data_residuals_protein[shared_genes_PaxDB]) + median(data_residuals_RNA[shared_genes_PaxDB])
+
+expression_ratio = log2(PaxDB_ES[shared_genes_PaxDB,4] / rowMeans(data_RNA[shared_genes_PaxDB,]))
+
+function_to_optimize <- function(data, par){-cor.test((par[1]*data[,1])+(par[2]*data[,2]), data[,3], method='spearman')$estimate}
+data_for_optimization = cbind(data_residuals_RNA[shared_genes_PaxDB], expression_ratio[shared_genes_PaxDB], data_residuals_protein[shared_genes_PaxDB])
+para = optim(c(1,1), function_to_optimize, data=data_for_optimization, method="SANN")$par; para # used to be SANN
+
+```
+
+A
+```{r plot figure 4A }
+
+dec_col <- rbPal(100)[as.numeric(cut(rank(data_residuals_RNA), breaks = 100))]
+plot(log(data_median_RNA)[names(data_residuals_RNA)], log(data_variation_RNA)[names(data_residuals_RNA)], col=dec_col, pch=16, frame.plot=F, xlab='Mean RNA expression (RPKM)', ylab='RNA expression noise (CV^2)', main='Gene expression and gene expression noise', cex=1.5)
+points(log(data_median_RNA)[names(data_residuals_RNA)], log(data_variation_RNA)[names(data_residuals_RNA)], cex=1.5, lwd=0.5)
+#abline(lts[1], lts[2], lty='dotted')
+text(log(data_median_RNA)[names(data_residuals_RNA)], log(data_variation_RNA)[names(data_residuals_RNA)], names(data_residuals_RNA), pos=1)
+legend("bottomleft", inset=0.05, legend=c("highly variable", "stably expressed"), fill=c("coral", "cornflowerblue"), cex=1)
+```
+
+```{r plot figure 4B}
+dec_col <- rbPal(100)[as.numeric(cut(rank(data_residuals_protein), breaks = 100))]
+plot(log(data_median_protein)[names(data_residuals_protein)], log(data_variation_protein)[names(data_residuals_protein)], col=dec_col, pch=16, frame.plot=F, xlab='Mean protein expression (2^dCq)', ylab='protein expression noise (CV^2)', main='Gene expression and gene expression noise', cex=1.5)
+points(log(data_median_protein)[names(data_residuals_protein)], log(data_variation_protein)[names(data_residuals_protein)], cex=1.5, lwd=0.5)
+#abline(lts[1], lts[2], lty='dotted')
+text(log(data_median_protein)[names(data_residuals_protein)], log(data_variation_protein)[names(data_residuals_protein)], names(data_residuals_protein), pos=1)
+legend("bottomleft", inset=0.05, legend=c("highly variable", "stably expressed"), fill=c("coral", "cornflowerblue"), cex=1)
+```
+
+```{r plot figure 4C}
+
+shared_genes = intersect(names(data_residuals_RNA), names(data_residuals_protein))
+rho = round(cor.test(data_residuals_RNA[shared_genes], data_residuals_protein[shared_genes], method='spearman')$estimate,3)
+rho2 = round(cor.test(data_residuals_RNA[shared_genes_PaxDB], data_residuals_protein[shared_genes_PaxDB], method='spearman')$estimate,3)
+plot(data_residuals_RNA[shared_genes], data_residuals_protein[shared_genes], frame.plot=F, pch=16, xlab='normalized RNA expression variation (A.U.)', ylab='normalized protein expression variation (A.U.)', main=paste('Gene expression variation\nrho_1: ',rho,"; rho_2:",rho2,sep=''),  cex=1.5, col="grey")
+points(data_residuals_RNA[shared_genes], data_residuals_protein[shared_genes], cex=1.5, lwd=0.5)
+points(data_residuals_RNA[shared_genes_PaxDB], data_residuals_protein[shared_genes_PaxDB], cex=1.5, pch=16)
+lts = least_total_squares(data_residuals_RNA[shared_genes], data_residuals_protein[shared_genes]); inter = lts[1]; slope = lts[2]
+abline(inter, slope, lty='dotted')
+text(data_residuals_RNA[shared_genes], data_residuals_protein[shared_genes], shared_genes, pos=1)
+```
+
+```{r plot figure 4D}
+
+shared_genes_PaxDB = intersect(shared_genes, rownames(PaxDB_ES))
+expression_ratio = log2(PaxDB_ES[shared_genes_PaxDB,4] / rowMeans(data_RNA[shared_genes_PaxDB,]))
+
+shared_genes = intersect(intersect(names(data_residuals_RNA), names(data_residuals_protein)), names(expression_ratio))
+rho = round(cor.test(data_residuals_RNA[shared_genes]+para[2]/para[1]*expression_ratio[shared_genes], data_residuals_protein[shared_genes], method='spearman')$estimate,3)
+
+plot(data_residuals_RNA[shared_genes]+para[2]/para[1]*expression_ratio[shared_genes], data_residuals_protein[shared_genes], pch=16, cex=1.5, frame.plot=F, col="grey", xlab='Combined RNA normalized variation and translation rate (A.U.)', ylab='Normalized protein expression variation (A.U.)', main=paste('Translation of gene expression variation\nrho: ',rho,sep=''))#, ylim=c(-1.5,1.5))#, xlim=c(-0.5,4.5))
+points(data_residuals_RNA[shared_genes]+para[2]/para[1]*expression_ratio[shared_genes], data_residuals_protein[shared_genes], cex=1.5, lwd=0.5, pch=16)
+lts = least_total_squares(data_residuals_RNA[shared_genes]+para[2]/para[1]*expression_ratio[shared_genes], data_residuals_protein[shared_genes]); inter = lts[1]; slope = lts[2]
+abline(inter, slope, lty='dotted')
+text(data_residuals_RNA[shared_genes]+para[2]/para[1]*expression_ratio[shared_genes],  data_residuals_protein[shared_genes], shared_genes, pos=1)
+
+```
+
+
+

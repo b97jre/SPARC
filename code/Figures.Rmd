@@ -1,10 +1,6 @@
 ---
-title: "Figure 1 subfigures"
+title: "Figures"
 output:
-  pdf_document:
-    toc: true
-    toc_depth: 2
-    fig_caption: false
   html_document:
     toc: yes
     toc_float:
@@ -12,6 +8,10 @@ output:
       collapsed: no
       smooth_scroll: no
       fig_caption: false
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    fig_caption: false
 params:
   sampleInfo: ../data/sampleInfo.txt
   geneInfo: ../data/geneInfo.txt
@@ -22,10 +22,20 @@ params:
   sampleInfo_sc: ../data/sampleInfo.SC.txt
   figuresDir: ../results/figures
   figure1AB: ../results/figures/Figures/Figure1/Reimegard_Figure1_A_B.png
-
+  POU5F1Targets: AK4,DHRS3,DUSP6,KLHL4,OTX2,PRR14L,TDGF1,WLS
+  TF_target_data: ../data/figures/figure3/TF_target_data.tsv
+  AUC_permuted: ../data/figures/figure3/TF_target_AUC_permuted.tsv
+  sampleInfoRNA: ../data/figures/figure4/UU_cell_info.RData
+  geneInfoRNA: ../data/figures/figure4/UU_gene_info.RData
+  RNAinfo: ../data/figures/figure4/RPKMs.table.QC.egn.tsv
+  sampleInfoProtein: ../data/figures/figure4/UU_cell_info_protein.RData
+  geneInfoProtein: ../data/figures/figure4/UU_gene_info_protein.RData
+  ProteinInfo: ../data/figures/figure4/UU_protein_all.RData
+  ProteinCqData: ../data/figures/figure4/scProtein_0_72h_ESC_QC.txt
+  PaxDBdata: ../data/figures/figure4/PaxDB_ES.RData    
 ---
 
-````{r setup}
+````{r setup, include=FALSE}
 
 library(ggrepel)
 library(kableExtra)
@@ -39,6 +49,14 @@ library(SCORPIUS)
 library(patchwork)
 library(png)
 
+library(GENIE3)
+
+library(ROCit)
+library(patchwork)
+
+library(genefilter)
+library(scales)
+
 
 
 source("supplementaryFunctions.R")
@@ -49,6 +67,7 @@ cbPalette <- c("#FF0000","#0000FF", "#0072B2", "#F0E442" , "#CC79A7", "#999999",
 timePalette <- c("#009E73","#D55E00", "#0072B2","#000000", "#F0E442" , "#CC79A7", "#E69F00", "#56B4E9")
 moleculePalette <- c("#FF0000","#0000FF")
 cellCyclePallete <-c("#999999" , "#CC79A7", "#E69F00")
+rbPal <- colorRampPalette(c('cornflowerblue','grey','coral'))
 
 ````
 
@@ -70,6 +89,8 @@ expression.protein.RNA = read_tsv(file = params$protein_RNA_expression, col_name
 # Remove all genes that is not expressed in at least 30
 geneInfo.QC = geneInfo %>% 
   filter(external_gene_name %in% rownames(lgRPKM.QC))
+
+POU5F1Targets = as.vector(strsplit(params$POU5F1Targets,split = ",") )[[1]]
 
 
 
@@ -106,7 +127,9 @@ TP53 = plotExpressionViolinPlotTitle(expressionInfo2 = expression.protein.RNA,
 
 AB = ggplot(mapping = aes(1:10, 1:10)) +
   annotation_raster(readPNG(source = params$figure1AB), xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) 
+```
 
+```{r plot figure 1}
 
 AB|(SOX2+POU5F1) /(EPCAM + TP53)
 
@@ -115,7 +138,7 @@ AB|(SOX2+POU5F1) /(EPCAM + TP53)
 
 # Figure 2
 
-```{r pseudo time analysis using SCORPIUS }
+```{r pseudo time analysis using SCORPIUS, echo=FALSE, warning= FALSE }
 
 
 set.seed(111)
@@ -127,7 +150,13 @@ group_name = as.factor(sampleInfo.sc$time)
 
 trajtSNE_RNA <- infer_trajectory(tSNE_RNA)
 
-RNA_pseudoTime = draw_trajectory_plot(tSNE_RNA, progression_group = group_name, path = trajtSNE_RNA$path )+ scale_color_manual(values = timePalette)
+RNA_pseudoTime = draw_trajectory_plot(tSNE_RNA, progression_group = group_name, path = trajtSNE_RNA$path )+ scale_color_manual(values = timePalette)+ 
+    theme_bw() + 
+    theme(panel.border = element_blank(), 
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black"))+
+  theme(legend.position="none")
 
 
 tSNE_Protein = data.frame(sampleInfo.sc[, c("Protein_tSNE_1","Protein_tSNE_2","Protein_tSNE_3")])
@@ -135,7 +164,13 @@ group_name = as.factor(sampleInfo.sc$time)
 
 trajtSNE_Protein <- infer_trajectory(tSNE_Protein)
 
-Protein_pseudoTime = draw_trajectory_plot(tSNE_Protein, progression_group = group_name, path = trajtSNE_Protein$path )+ scale_color_manual(values = timePalette)
+Protein_pseudoTime = draw_trajectory_plot(tSNE_Protein, progression_group = group_name, path = trajtSNE_Protein$path )+ scale_color_manual(values = timePalette)+ 
+    theme_bw() + 
+    theme(panel.border = element_blank(), 
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black"))+
+  theme(legend.position="none")
 
 
 # SCORPIUS does not set direction. Adjust so that 0h samples is closer to 0 in pseudotime
@@ -145,57 +180,103 @@ sampleInfo.sc$pseudoTimeProtein = trajtSNE_Protein$time*48
 
 
 #ggplot(sampleInfo2, aes(x = pseudoTimeProteinPCA, y = pseudoTime, color = time))+ geom_point()
-compare_time = ggplot(sampleInfo.sc, aes(x = pseudoTimeProtein, y = pseudoTimeRNA, color = time))+ geom_point() + scale_color_manual(values = timePalette)
+compare_time = ggplot(sampleInfo.sc, aes(x = pseudoTimeProtein, y = pseudoTimeRNA, color = time))+ geom_point() + scale_color_manual(values = timePalette) + 
+    theme_bw() + 
+    theme(panel.border = element_blank(), 
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black"))+
+  theme(legend.position="none")
 
-cor(sampleInfo.sc$pseudoTimeProtein, sampleInfo.sc$pseudoTimeRNA)
 
 
 
-expression.protein.RNA = sampleInfo.sc %>% dplyr::select(Sample, pseudoTimeRNA)%>% 
+expression.protein.RNA.figure2 = sampleInfo.sc %>% dplyr::select(Sample, pseudoTimeRNA)%>% 
   dplyr::rename(sample = "Sample") %>% 
   inner_join(expression.protein.RNA) %>%
   dplyr::rename(pseudoTime = "pseudoTimeRNA")
 
 genes = c("SOX2","EPCAM","POU5F1")
-  expression.protein.RNA 
 
 
-SOX2_scatter = scatterDensityPlotFigure(expressionInfoSpec = expression.protein.RNA, 
+SOX2_scatter = scatterDensityPlotFigure(expressionInfoSpec = expression.protein.RNA.figure2, 
                                         geneName = "SOX2",
                                         cbPalette = timePalette )
 SOX2_scatter = ggdraw(SOX2_scatter)
 
-SOX2_pseudoTime = plotPseudotimeFigure(expressionInfo2 = expression.protein.RNA,
+SOX2_pseudoTime = plotPseudotimeFigure(expressionInfo2 = expression.protein.RNA.figure2,
                                        protein = "SOX2", 
-                                       timePalette = timePalette )
+                                       timePalette = timePalette )+ ggtitle('SOX2')
 
 
-EPCAM_scatter = scatterDensityPlotFigure(expressionInfoSpec = expression.protein.RNA, 
+EPCAM_scatter = scatterDensityPlotFigure(expressionInfoSpec = expression.protein.RNA.figure2, 
                                         geneName = "EPCAM",
                                         cbPalette = timePalette )
 EPCAM_scatter = ggdraw(EPCAM_scatter)
 
-EPCAM_pseudoTime = plotPseudotimeFigure(expressionInfo2 = expression.protein.RNA,
+EPCAM_pseudoTime = plotPseudotimeFigure(expressionInfo2 = expression.protein.RNA.figure2,
                                        protein = "EPCAM", 
-                                       timePalette = timePalette )
-POU5F1_scatter = scatterDensityPlotFigure(expressionInfoSpec = expression.protein.RNA, 
+                                       timePalette = timePalette )+ ggtitle('EPCAM')
+
+POU5F1_scatter = scatterDensityPlotFigure(expressionInfoSpec = expression.protein.RNA.figure2, 
                                         geneName = "POU5F1",
                                         cbPalette = timePalette )
 POU5F1_scatter = ggdraw(POU5F1_scatter)
 
-POU5F1_pseudoTime = plotPseudotimeFigure(expressionInfo2 = expression.protein.RNA,
+POU5F1_pseudoTime = plotPseudotimeFigure(expressionInfo2 = expression.protein.RNA.figure2,
                                        protein = "POU5F1", 
-                                       timePalette = timePalette )
+                                       timePalette = timePalette )+ ggtitle('POU5F1')
 
 A = RNA_pseudoTime +  ggtitle('RNA pseudotime')
 B = Protein_pseudoTime+ ggtitle('Protein pseudotime')
 C = compare_time+ ggtitle('Correlation of \npseudotimes')
 
-(A+B+C) + plot_annotation(tag_levels = 'A')
-(SOX2_scatter+SOX2_pseudoTime)+  ggtitle('SOX2')
-(EPCAM_scatter+EPCAM_pseudoTime)+  ggtitle('EPCAM')
-(POU5F1_scatter+POU5F1_pseudoTime)+  ggtitle('POU5F1')
 
+
+layout = "
+AABBCC
+AABBCC
+"
+
+
+A+B+C +plot_annotation(tag_levels = 'A') + 
+     plot_layout(design = layout)
+
+
+(SOX2_scatter)+SOX2_pseudoTime 
+
+(EPCAM_scatter)+EPCAM_pseudoTime 
+
+(POU5F1_scatter)+ POU5F1_pseudoTime 
+  
+     
+   
+
+   
+
+```
+
+
+
+```{r load info for figure 2, include=FALSE}
+
+
+sampleInfo = read.table(params$sampleInfo, sep = "\t", quote = "",
+            header = TRUE, stringsAsFactors = FALSE)
+geneInfo = read.table(params$geneInfo, sep = "\t", quote = "",
+            header = TRUE, stringsAsFactors = FALSE)
+
+
+lgRPKM.QC = read.table(params$RPKMInfo, sep = "\t", quote = "",
+            header = TRUE, stringsAsFactors = FALSE)
+
+
+expression.protein.RNA = read_tsv(file = params$protein_RNA_expression, col_names = T)
+# Remove all genes that is not expressed in at least 30
+geneInfo.QC = geneInfo %>% 
+  filter(external_gene_name %in% rownames(lgRPKM.QC))
+
+POU5F1Targets = as.vector(strsplit(params$POU5F1Targets,split = ",") )[[1]]
 
 
 
@@ -207,105 +288,81 @@ C = compare_time+ ggtitle('Correlation of \npseudotimes')
 # Figure 3
 
 
-# Calculate correlation
 
 
-## Pearson correlation
+
+```{r calculate correlation, include=FALSE}
+## Calculate TF target weights
+
+### Pearson correlation
+
+# Only run this if you want to rerun data.
+if(!file.exists(params$TF_target_data)){
+samples = expression.protein.RNA %>% 
+  filter(type == "sc") %>% 
+  select(sample) %>% 
+  distinct()
+
+samples0h = expression.protein.RNA %>%
+  filter(type == "sc" & time == "0h") %>%
+  select(sample) %>% 
+  distinct()
+
+TFs = c("SOX2", "POU5F1")
+
+protein.expression.TF = expression.protein.RNA %>% 
+  filter(geneID %in%  TFs& sample %in% samples$sample ) %>%
+  select(sample,geneID, Cq ) %>% spread(key = sample,value = Cq)  %>% as.data.frame()
+
+genes = protein.expression.TF$geneID
+rownames(protein.expression.TF) = protein.expression.TF$geneID 
+protein.expression.TF = protein.expression.TF %>% select(-geneID) 
+protein.expression.TF = as.matrix(protein.expression.TF[,samples$sample])
 
 
-### POU5F1
-```{r calculate correlation}
-
-exprMat2 = as.matrix(lgRPKM.QC)
+RNA.expression = as.matrix(lgRPKM.QC[,samples$sample])  
 
 
-dim(proteinData.TF)
-dim(exprMat)
-p.cor.all = as.data.frame(cor(t(proteinData.TF),t(exprMat)))
-r.cor.all = as.data.frame(cor(t(exprMat2[TFs,]),t(exprMat)))
+p.cor.all = as.data.frame(cor(t(protein.expression.TF),t(RNA.expression))) %>% 
+  rownames_to_column %>%
+  rename(TF = "rowname") %>%
+  gather(var, score, -TF) %>%
+  mutate(time = "All", molecule = "Protein", method = "Pearson")
+
+  
+  
+r.cor.all = as.data.frame(cor(t(RNA.expression[TFs,]),t(RNA.expression)))%>% 
+  rownames_to_column %>%
+  rename(TF = "rowname") %>%
+  gather(var, score, -TF) %>%
+  mutate(time = "All", molecule = "RNA", method = "Pearson")
 
 
-samples0h = sampleInfo$ID[sampleInfo$time == "0h"]
-p.cor.SS = as.data.frame(cor(t(proteinData.TF[,samples0h]),t(exprMat[,samples0h])))
-r.cor.SS = as.data.frame(cor(t(exprMat2[TFs,samples0h]),t(exprMat[,samples0h])))
 
+p.cor.SS = as.data.frame(cor(t(protein.expression.TF[,samples0h$sample]),
+                             t(RNA.expression[,samples0h$sample])))%>% 
+  rownames_to_column %>%
+  rename(TF = "rowname") %>%
+  gather(var, score, -TF) %>%
+  mutate(time = "SS", molecule = "Protein", method = "Pearson")
 
-p.cor.all.abs = abs(p.cor.all)
-r.cor.all.abs = abs(r.cor.all)
-p.cor.SS.abs = abs(p.cor.SS)
-r.cor.SS.abs = abs(r.cor.SS)
-
-p.cor.all.abs.rank = (apply(p.cor.all.abs, 1, rank))
-r.cor.all.abs.rank = (apply(r.cor.all.abs, 1, rank))
-p.cor.SS.abs.rank = (apply(p.cor.SS.abs, 1, rank))
-r.cor.SS.abs.rank = (apply(r.cor.SS.abs, 1, rank))
-
-p.cor.all.abs$TF = rownames(p.cor.all.abs)
-r.cor.all.abs$TF = rownames(r.cor.all.abs)
-p.cor.SS.abs$TF = rownames(p.cor.SS.abs)
-r.cor.SS.abs$TF = rownames(r.cor.SS.abs)
-
-p.cor.all$TF = rownames(p.cor.all)
-r.cor.all$TF = rownames(r.cor.all)
-p.cor.SS$TF = rownames(p.cor.SS)
-r.cor.SS$TF = rownames(r.cor.SS)
-
-p.cor.all.abs.rank$TF = rownames(p.cor.all.abs.rank)
-r.cor.all.abs.rank$TF = rownames(r.cor.all.abs.rank)
-p.cor.SS.abs.rank$TF = rownames(p.cor.SS.abs.rank)
-r.cor.SS.abs.rank$TF = rownames(r.cor.SS.abs.rank)
-
-
-p.cor.all.abs.DF = p.cor.all.abs %>% gather(key = "geneID", value = "score", -TF )
-p.cor.all.abs.DF$time = "All"
-p.cor.all.abs.DF$molecule = "Protein"
-
-r.cor.all.abs.DF = r.cor.all.abs %>% gather(key = "geneID", value = "score", -TF )
-r.cor.all.abs.DF$time = "All"
-r.cor.all.abs.DF$molecule = "RNA"
-
-
-p.cor.SS.abs.DF = p.cor.SS.abs %>% gather(key = "geneID", value = "score", -TF )
-p.cor.SS.abs.DF$time = "SS"
-p.cor.SS.abs.DF$molecule = "Protein"
-
-
-r.cor.SS.abs.DF = r.cor.SS.abs %>% gather(key = "geneID", value = "score", -TF )
-r.cor.SS.abs.DF$time = "SS"
-r.cor.SS.abs.DF$molecule = "RNA"
-
-
-correlation = rbind(p.cor.all.abs.DF,r.cor.all.abs.DF,p.cor.SS.abs.DF,r.cor.SS.abs.DF)
-correlation$method = "pearson"
-
-
-p.cor.all.DF = p.cor.all %>% gather(key = "geneID", value = "score", -TF )
-p.cor.all.DF$time = "All"
-p.cor.all.DF$molecule = "Protein"
-
-r.cor.all.DF = r.cor.all %>% gather(key = "geneID", value = "score", -TF )
-r.cor.all.DF$time = "All"
-r.cor.all.DF$molecule = "RNA"
-
-
-p.cor.SS.DF = p.cor.SS %>% gather(key = "geneID", value = "score", -TF )
-p.cor.SS.DF$time = "SS"
-p.cor.SS.DF$molecule = "Protein"
-
-
-r.cor.SS.DF = r.cor.SS %>% gather(key = "geneID", value = "score", -TF )
-r.cor.SS.DF$time = "SS"
-r.cor.SS.DF$molecule = "RNA"
-
-correlation2 = rbind(p.cor.all.DF,r.cor.all.DF,p.cor.SS.DF,r.cor.SS.DF)
-correlation2$method = "pearson"
+r.cor.SS = as.data.frame(cor(t(RNA.expression[TFs,samples0h$sample]),
+                             t(RNA.expression[,samples0h$sample])))%>% 
+  rownames_to_column %>%
+  rename(TF = "rowname") %>%
+  gather(var, score, -TF) %>%
+  mutate(time = "SS", molecule = "RNA", method = "Pearson")
 
 
 
 
-```{ }
-
-
+Pearson = rbind(p.cor.all,r.cor.all,p.cor.SS,r.cor.SS)%>%
+  rename(geneID = var) %>%
+  mutate(TF = gsub(pattern = "_p",replacement = "", TF )) %>% 
+  select(TF,molecule, time, geneID,  score, method ) 
+}else{
+  print("Data exists. Loading data instead.  ")
+}
 
 
 
@@ -315,56 +372,633 @@ correlation2$method = "pearson"
 
 
 
-Figure 
+
+```{r get gene regulatory networks for all time points, include=FALSE}
+### GENIE3
+
+if(!file.exists(params$TF_target_data)){
+# seperate the samples based on the cell cycle
+
+TF = rownames(protein.expression.TF)
+rownames(protein.expression.TF) = paste(TF, "p" , sep = "_")
+TF_protein = rownames(protein.expression.TF) 
+
+RNA.protein.expression = rbind(RNA.expression,protein.expression.TF)
+
+
+## Network analysis with all samples in all three timepoints with regulator as RNA
+
+GENIE3.RNA.all <- GENIE3(exprMatrix = as.matrix(RNA.expression), regulators =TF, nCores = 4 )
+GENIE3.RNA.all.DF = data.frame(GENIE3.RNA.all) %>%
+  rownames_to_column %>% 
+  gather(var, value, -rowname) %>% 
+  spread(rowname, value) %>% 
+  gather(key =  TF, value = score, -var) %>%
+  mutate(time = "All", molecule = "RNA", method = "Genie3")
 
 
 
+## Network analysis with all samples in all three timepoints with regulator as protein
+
+GENIE3.Protein.all <- GENIE3(exprMatrix = as.matrix(RNA.protein.expression),
+                             regulators = TF_protein, nCores = 4 )
+GENIE3.Protein.all.DF = data.frame(GENIE3.Protein.all) %>%
+  rownames_to_column %>% 
+  gather(var, value, -rowname) %>% 
+  spread(rowname, value) %>%
+  gather(key =  TF, value = score, -var) %>%
+  mutate(time = "All", molecule = "Protein", method = "Genie3")
 
 
-##Figure 3
+## Network analysis with all samples in steady state timepoints with regulator as RNA
 
-
-
-
-```{}
-
-
-
-TF_analysis.filtered.protein.df = read.table(file = "POU5F1.targets.filtered.tsv", sep = "\t", header = T)
-
-TF_analysis.filtered.protein.df$Significant[TF_analysis.filtered.protein.df$Significant == 0] = "FALSE"
-TF_analysis.filtered.protein.df$Significant[TF_analysis.filtered.protein.df$Significant == 1] = TRUE
-
- p <- ggplot(TF_analysis.filtered.protein.df, aes(reorder(ID,IDorder), reorder(Gene, pearson))) + 
-  geom_tile(aes(fill = GRN_score, color = as.factor(Significant)),width=0.85, height=0.85 , size = 0.8) + 
-              scale_fill_gradient(low = "white", high = "steelblue") +scale_color_manual(values = c("#FFFFFF00", "#000000FF"))
- 
-
-dim(TF_analysis.filtered.protein.df)
-
-
-getwd()
+GENIE3.RNA.SS <- GENIE3(exprMatrix = as.matrix(RNA.expression[,samples0h$sample]), regulators =TF, nCores = 4 )
+GENIE3.RNA.SS.DF = data.frame(GENIE3.RNA.SS) %>%
+  rownames_to_column %>% 
+  gather(var, value, -rowname) %>% 
+  spread(rowname, value) %>% 
+  gather(key =  TF, value = score, -var) %>%
+  mutate(time = "SS", molecule = "RNA", method = "Genie3")
 
 
 
-base_size <- 9
- p + theme_bw(base_size = base_size) + theme_void()+ labs(x = "",y = "") + 
-   scale_x_discrete(expand = c(0, 0),position = "top") + scale_x_discrete(position = "top")+ 
-   theme( legend.position = "none", axis.text.x = element_text(                                                                     angle = 90, hjust = 1))
- 
- fileName = paste(params$storageDir, "figures/figure3/correlations_in_common.pdf", sep = "/")
+## Network analysis with all samples in all three timepoints with regulator as protein
+
+GENIE3.Protein.SS <- GENIE3(exprMatrix = as.matrix(RNA.protein.expression[,samples0h$sample]),
+                             regulators = TF_protein, nCores = 4 )
+GENIE3.Protein.SS.DF = data.frame(GENIE3.Protein.SS) %>%
+  rownames_to_column %>% 
+  gather(var, value, -rowname) %>% 
+  spread(rowname, value) %>%
+  gather(key =  TF, value = score, -var) %>%
+  mutate(time = "SS", molecule = "Protein", method = "Genie3")
 
 
- ggsave(fileName, height  = 10, width = 3) 
+
+Genie = bind_rows(GENIE3.RNA.all.DF,
+                  GENIE3.Protein.all.DF,
+                  GENIE3.RNA.SS.DF,
+                  GENIE3.Protein.SS.DF) %>%
+  rename(geneID = var) %>%
+  mutate(TF = gsub(pattern = "_p",replacement = "", TF )) %>% 
+  select(TF,molecule, time, geneID,  score, method ) 
+
+
+}else{
+  print("Data exists. Loading data instead.  ")
+}
+
+
+```
+
+
+```{r join data, include=FALSE}
+
+if(!file.exists(params$TF_target_data)){
+TF_target_scores = bind_rows(Genie, Pearson )  %>%
+  filter(!is.na(score))
+
+}else{
+    print("Data exists. Loading data instead.  ")
+
+  TF_target_scores = read_tsv(file = params$TF_target_data, col_names = T)
+}
+
+TF_target_scores$POU5F1_targets = 0
+TF_target_scores$POU5F1_targets[TF_target_scores$geneID %in%  POU5F1Targets] = 1
+TF_target_scores[TF_target_scores$geneID %in%  POU5F1Targets,]
+
+```
+
+```{r get ROCinfo, include=FALSE}
+## Calculate ROC and AUC analysis
+
+YoudenList = list()
+ROCplotList = list()
+
+for(method1 in c("Genie3")){
+  for(TF1 in c("POU5F1")){
+  for(molecule1 in unique(TF_target_scores$molecule)){
+    for(time1 in unique(TF_target_scores$time)){
+      temp = TF_target_scores %>% filter(method == method1, 
+                                         molecule == molecule1,
+                                         time == time1,
+                                         TF == TF1)
+      Info = paste(method1,"POU5F1",molecule1, time1, sep = "_")
+      
+      
+      ROCinfo = getROCinfo(genie3DF =temp, TF =  "POU5F1",
+                           molecule = molecule1, time = time1, FPR = 0.1,
+                           regulation = "POU5F1_targets")
+      Youden = ROCinfo$Youden
+      Youden$method = method1
+      Youden$TF = "POU5F1"
+      YoudenList[[Info]] = Youden
+      
+      ROCplot =ROCinfo$ROCplotInfo
+      ROCplot$method = method1
+      ROCplot$TF = "POU5F1"
+      ROCplotList[[Info]] = ROCplot
+    }
+  }
+}
+}
+
+
+YoudenAll = bind_rows(YoudenList)
+ROCinfoAll= bind_rows(ROCplotList)
+
+ROCinfoAll2 = ROCinfoAll %>% filter(method == "Genie3")
+
+chance = data.frame(TPR = c(0,1), FPR = c(0,1))
+
+
+ROCinfoAll = ROCinfoAll  %>%
+  mutate(time = gsub(pattern = "All", replacement = "Dynamic", time)) 
+
+ROCplot = ggplot()  + geom_path(data = ROCinfoAll, mapping = aes(y = TPR, x = FPR, color = molecule,linetype = time)) +
+  geom_line(data = chance, mapping = aes(y = TPR, x = FPR), color = "black", linetype = 2) + 
+  geom_point(data = YoudenAll, mapping = aes(y = TPR, x = FPR, color = molecule)) +
+  scale_colour_manual(values=moleculePalette)+ theme(legend.position = c(0.8, 0.3))+ theme_bw()+ ggtitle("Gene regulatory network ROCplot for POU5F1 ")
+
+ggsave("../results/figures/Figures/Figure3/figure3D.pdf",width = 10, 
+        height = 6, units = "cm" )
+
+
+TF_target_scores.cutoff = inner_join(TF_target_scores, YoudenAll)
+
+TF_target_scores.cutoff = TF_target_scores.cutoff %>% mutate(significant = ifelse(score > hardCutOff, 1, 0))
 
 
 ```
 
 
 
-```sad
+
+```{r , include=FALSE}
+## Calculate AUC
+
+
+if(file.exists(params$AUC_permuted)){
+  AUCs_permuted = read_tsv( file =params$AUC_permuted , col_names = T)
+  
+}else{
+TFshuffle   = TF_target_scores
+
+AUCs_RNA_All = getShuffleAUC(TF_target_scores = TFshuffle, 
+                     TF =  "POU5F1" ,
+                      molecule = "RNA", 
+                     time = "All",
+                          n =100 )
+AUCs_Protein_All = getShuffleAUC(TF_target_scores = TFshuffle, 
+                                 TF =  "POU5F1" ,
+                                 molecule = "Protein",
+                                 time = "All",
+                                 n =100 )
+AUCs_RNA_SS = getShuffleAUC(TF_target_scores = TFshuffle, 
+                            TF =  "POU5F1" ,
+                            molecule = "RNA",
+                            time = "SS",
+                            n =100 )
+
+AUCs_Protein_SS = getShuffleAUC(TF_target_scores = TFshuffle, 
+                                TF =  "POU5F1" ,
+                                molecule = "Protein",
+                                time = "SS",
+                                n =100 )
+
+AUCs_permuted = bind_rows(AUCs_RNA_All,AUCs_Protein_All,AUCs_RNA_SS,AUCs_Protein_SS)
+
+}
+
+AUCinfo_real = YoudenAll %>% select(time,molecule,AUC) %>% 
+  mutate(TF = "POU5F1", type = "Real")  %>%
+  mutate(time = gsub(pattern = "All", replacement = "Dynamic", time))
+AUCs_permuted  = AUCs_permuted  %>%
+  mutate(time = gsub(pattern = "All", replacement = "Dynamic", time))
+
+
+
+
+ AUCplot = ggplot(AUCs_permuted, aes (x = molecule, y = AUC, fill = molecule, color = molecule))+ 
+   geom_boxplot(fill = "white",  color ="black", lwd=0.25)+
+   geom_jitter(shape = 16, size = 0.25,
+               color = "black",
+               position = position_jitterdodge(seed = 1, dodge.width = 0.9))+
+   scale_fill_manual(values=moleculePalette)+
+   scale_color_manual(values=moleculePalette)+
+    geom_point(data =AUCinfo_real,aes (x = molecule, y = AUC, fill = molecule),shape = 17,
+               size = 1) +
+    facet_grid(.~time) +  
+   ylim(c(0,1))+
+    theme_bw() + 
+    theme(
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black")) +
+ theme(legend.position = "top")
+ 
+ 
+df2  = AUCs_permuted %>% group_by(type, time) %>%
+  summarise(AUC = mean(AUC)) %>% mutate(molecule = "Permuted") 
+df2 = AUCinfo_real %>% select(type, time, molecule, AUC) %>% bind_rows(df2)
+
+
+  df2$molecule = factor(df2$molecule, levels = c("RNA", "Protein", "Permuted"))
+
+AUCs_permuted2 = AUCs_permuted %>% mutate(molecule = "Permuted") %>% bind_rows(AUCinfo_real)   
+AUCs_permuted2$molecule = factor(AUCs_permuted2$molecule, levels = c("RNA", "Protein", "Permuted"))
+  
+AUCplot <- ggplot(df2, aes(x=time, y=AUC, fill=molecule)) + 
+  geom_bar(stat="identity", color="black", 
+           position=position_dodge()) +
+   geom_jitter(data = AUCs_permuted2, shape = 16, size = 0.25,
+               color = "black",
+               position = position_jitterdodge(seed = 1, dodge.width = 0.9))+
+  scale_fill_manual(values=c(moleculePalette,"grey"))+ theme_bw() +   theme(legend.position="none")
+
+
+AUCplot
+
+ 
+ ggsave("../results/figures/Figures/Figure3/figure3E.pdf",width = 6, 
+        height = 6, units = "cm" )
+   
+ 
+
+```
+
+
+```{r , include=FALSE}
+## Identify targets
+
+
+targets = c("TDGF1","AK4","OTX2" ,"EPCAM","RBM47","HESX1","NANOG","IL17RD","HLTF" ,"ETV4" ,"BNIP1","ENC1" ,"SKIV2L","HSPD1","UIMC1","CENPE", "STAT2","RBM25")
+
+PearsonTarget.order = TF_target_scores%>% 
+  filter( TF == "POU5F1") %>% 
+  filter( method != "Genie3") %>% 
+  filter( geneID %in% targets) %>%
+  filter(time == "All", molecule == "Protein") %>%
+  arrange(score)
+
+
+
+  
+
+
+PearsonTarget = TF_target_scores.cutoff %>% 
+  filter( TF == "POU5F1") %>% 
+  filter( method == "Genie3") %>% 
+  filter( geneID %in% targets) %>%
+  mutate(ID =paste (molecule, time , sep = "_")) %>%
+  as.data.frame()
+
+PearsonTarget$ID = factor(PearsonTarget$ID, levels = c("Protein_All","Protein_SS",
+                                                       "RNA_All","RNA_SS"))
+PearsonTarget$Gene = factor(PearsonTarget$geneID, levels =PearsonTarget.order$geneID)
+
+
+
+ TargetWieghtsTiles <- ggplot(PearsonTarget, aes(x = ID, y = Gene)) + 
+  geom_tile(aes(fill = score, color = as.factor(significant)),width=0.85, height=0.85 , size = 0.8) + 
+              scale_fill_gradient(low = "white", high = "steelblue") +scale_color_manual(values = c("#FFFFFF00", "#000000FF"))  +theme_bw() + 
+    theme(panel.border = element_blank(), 
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(colour = "black"))+
+  theme(legend.position="none")
+   
+
+```
+
+```{r heatmap values, include=FALSE}
+
+#expression.protein.RNA 
+
+#Pearson.targets = expression.protein.RNA%>% 
+#  filter( geneID %in% targets) %>%
+#  mutate(ID =paste (molecule, time , sep = "_")) %>%
+#  select(RPKM, geneID,sample) %>% spread(key = geneID, value = RPKM) %>%
+#  as.data.frame()
+
+Pearson.targets.POU5F1 = expression.protein.RNA %>% 
+  filter(type == 'sc') %>%
+  filter(geneID == "POU5F1")%>%
+  arrange(-Cq)  %>% select(sample,Cq, RPKM) %>% as.data.frame()
+rownames(Pearson.targets.POU5F1) = Pearson.targets.POU5F1$sample
+Pearson.targets.POU5F1 = Pearson.targets.POU5F1[, -1] 
+Pearson.targets.POU5F1$empty = 0
+Pearson.targets.POU5F1 = t(Pearson.targets.POU5F1)
+Pearson.targets.POU5F1[3,] <- NA
+
+
+Pearson.targets.POU5F1 = as.matrix(Pearson.targets.POU5F1)
+
+
+RNA.expression = as.matrix(lgRPKM.QC[,colnames(Pearson.targets.POU5F1)])  
+
+POU5F1.targets.expression = RNA.expression[rev(PearsonTarget.order$geneID),colnames(Pearson.targets.POU5F1) ]
+
+library(RColorBrewer)
+Colors=rev(brewer.pal(11,"Spectral"))
+Colors=c("blue","white","red")
+Colors=colorRampPalette(Colors)(90)
+Breaks=seq(-1.5,1.5,0.033)
+length(Breaks)
+length(Colors)
+
+Colors=c("blue","white","red")
+Colors=colorRampPalette(Colors)(90)
+
+Breaks=seq(-1.5,1.5,0.033)
+
+library(gplots)
+
+
+  
+
+
+heatMapData = rbind(Pearson.targets.POU5F1, 
+      POU5F1.targets.expression)
+
+rownames(heatMapData) = c("POU5F1 protein", "POU5F1 RNA", "TargetRNAs", rownames(POU5F1.targets.expression) )
+
+heatmap.2(as.matrix(heatMapData) ,
+          Rowv = FALSE,
+          Colv = FALSE, 
+          col=Colors, 
+          scale = "row",
+          symm = FALSE, trace="none", 
+          density.info="none", 
+          labCol = NA,
+          margins=c(2,10),
+          breaks=Breaks
+          )
+ 
+
+as.numeric(as.matrix(heatMapData))
+
+
+
+
+
+
+```
+
+
+```{r, include=FALSE}
+
+Pearson.targets.POU5F1 = expression.protein.RNA %>% 
+  filter(type == 'sc') %>%
+  filter(time == '0h') %>%
+  filter(geneID == "POU5F1")%>%
+  arrange(-Cq)  %>% select(sample,Cq, RPKM,time) %>% 
+  rename("POU5F1 Protein" = Cq) %>%
+  rename("POU5F1 RNA" = RPKM)
+
+expression = t(POU5F1.targets.expression[c("TDGF1","OTX2") ,Pearson.targets.POU5F1$sample]) %>% as.data.frame()
+expression$sample = rownames(expression)
+
+ExpressionInfo = inner_join(Pearson.targets.POU5F1, expression) %>%
+  gather(key = target, value = Target_expression, TDGF1, OTX2) %>%
+  gather(key = TF, value = TF_expression, 'POU5F1 Protein', 'POU5F1 RNA') 
+
+   
+
+
+TDGF1_protein = plotScatterPlot(ExpressionInfo = ExpressionInfo, TF1 = "POU5F1 Protein", target1 = "TDGF1")
+TDGF1_RNA = plotScatterPlot(ExpressionInfo = ExpressionInfo, TF1 = "POU5F1 RNA", target1 = "TDGF1")
+
+OTX2_protein = plotScatterPlot(ExpressionInfo = ExpressionInfo, TF1 = "POU5F1 Protein", target1 = "OTX2")
+OTX2_RNA = plotScatterPlot(ExpressionInfo = ExpressionInfo, TF1 = "POU5F1 RNA", target1 = "OTX2")
+
+
+
+
+```
+
+
+### A
+```{r , echo=FALSE}
+
+patchwork <- (TDGF1_protein + TDGF1_RNA) /
+  (OTX2_protein + OTX2_RNA)
+patchwork + plot_annotation(
+  title = 'Normalized expression in steady state',
+)
+```
+
+
+
+
+### B
+
+```{r , echo=FALSE}
+TargetWieghtsTiles 
+
+
+
+```
+
+### C
+```{r , echo=FALSE}
+
+heatmap.2(as.matrix(heatMapData) ,
+          Rowv = FALSE,
+          Colv = FALSE, 
+          col=Colors, 
+          scale = "row",
+          symm = FALSE, trace="none", 
+          density.info="none", 
+          labCol = NA,
+          margins=c(2,10),
+          breaks=Breaks
+          )
+
+
+
+```
+
+### D
+````{r figure 3D, echo=FALSE}
+ROCplot
+
+````
+
+
+### E
+```{r figure 3R, echo=FALSE}
+AUCplot
+
+```
+
+
 
 # Figure 4
 
-# Figure 5
+```{r load RNA and protein info, include=FALSE}
+
+RNA_all <- data.frame(read.table(params$RNAinfo))
+load(file=params$sampleInfoRNA) # cell_info
+load(file=params$geneInfoRNA) # gene_info
+
+load(file=params$ProteinInfo) # protein_all
+load(file=params$sampleInfoProtein) # cell_info_protein
+load(file=params$geneInfoProtein) # gene_info_protein
+
+
+
+
+# FACS data
+protein_FACS = read.table(file=params$ProteinCqData)
+protein_FACS = t(protein_FACS); protein_FACS = protein_FACS[,protein_FACS['type',]=='FACS']; protein_FACS = protein_FACS[5:(dim(protein_FACS)[1]),]; class(protein_FACS) <- "numeric" 
+protein_FACS_0h = protein_FACS[,substr(colnames(protein_FACS),1,7)=='Comb_0h']
+
+```
+
+
+```{r filter data , include=FALSE }
+
+
+shared_cells = intersect(colnames(RNA_all), colnames(protein_all))
+shared_cells = intersect(rownames(cell_info), shared_cells)
+shared_cells = intersect(rownames(cell_info_protein), shared_cells)
+cell_info = cell_info[shared_cells, ]
+cell_info_protein = cell_info_protein[shared_cells, ]
+
+shared_genes = intersect(rownames(RNA_all), rownames(protein_all))
+
+
+
+length(rownames(RNA_all)); length(unique(rownames(RNA_all)))
+RNA_all = RNA_all[rowSums(RNA_all)>0,]
+
+
+
+```
+
+```{r time selection, include=FALSE }
+
+filtered_cells_0h = shared_cells[(cell_info[shared_cells,'pseudotime_scorpius']>=0.8) & (cell_info[shared_cells,'pseudotime_scorpius']<1.1) & (cell_info_protein[shared_cells,'time_given']=='0h')]
+filtered_cells_24h = shared_cells[(cell_info[shared_cells,'pseudotime_scorpius']>=0.45) & (cell_info_protein[shared_cells,'pseudotime_scorpius']<0.8) & (cell_info_protein[shared_cells,'time_given']=='24h')]  
+filtered_cells_48h = shared_cells[(cell_info[shared_cells,'pseudotime_scorpius']>=0.0) & (cell_info_protein[shared_cells,'pseudotime_scorpius']<0.55) & (cell_info_protein[shared_cells,'time_given']=='48h')]
+filtered_cells_72h = rownames(cell_info_protein)[(cell_info_protein[,'time_given']=='72h')]
+filtered_cells_all = c(filtered_cells_0h, filtered_cells_24h, filtered_cells_48h)
+
+RNA_0h_filtered = RNA_all[,filtered_cells_0h]
+RNA_24h_filtered = RNA_all[,filtered_cells_24h]
+RNA_48h_filtered = RNA_all[,filtered_cells_48h]
+
+protein_0h_filtered = protein_all[,filtered_cells_0h]
+protein_24h_filtered = protein_all[,filtered_cells_24h]
+protein_48h_filtered = protein_all[,filtered_cells_48h]
+protein_72h_filtered = protein_all[,filtered_cells_72h]
+
+```
+
+
+```{r filter 2 , include=FALSE}
+# further filtering (low protein abundance, cell cycle, etc.)
+
+data_RNA = RNA_0h_filtered[,intersect(colnames(RNA_0h_filtered), rownames(cell_info))]
+
+data_protein = protein_0h_filtered[,intersect(colnames(protein_0h_filtered), rownames(cell_info))] # looks better
+
+data_protein = data_protein[rowMeans(data_protein)!=0,]
+
+low_abundance_filter = intersect(rownames(data_protein), rownames(protein_FACS_0h)[rank(rowMeans(protein_FACS_0h))>6])
+data_protein = data_protein[low_abundance_filter,]
+
+data_RNA = data_RNA[rownames(data_protein),]
+
+```
+
+
+```{r gene expression noise analysis, include=FALSE }
+data_median_RNA = rowMeans(data_RNA)
+data_variation_RNA = (rowSds(as.matrix(data_RNA))/rowMeans(data_RNA))**2
+data_residuals_RNA = own_residuals(data_median_RNA, data_variation_RNA, log=T, p=3)[[2]]
+
+data_median_protein = rowMeans(data_protein)
+data_variation_protein = (rowSds(data_protein)/rowMeans(data_protein))**2
+data_residuals_protein = own_residuals(data_median_protein, data_variation_protein, log=T, p=3)[[2]]
+
+shared_genes = intersect(names(data_residuals_RNA), names(data_residuals_protein))
+
+load(file=params$PaxDBdata)
+
+shared_genes_PaxDB = intersect(shared_genes, rownames(PaxDB_ES))
+
+noise_ratio = (data_residuals_protein[shared_genes_PaxDB]) - (data_residuals_RNA[shared_genes_PaxDB]) - median(data_residuals_protein[shared_genes_PaxDB]) + median(data_residuals_RNA[shared_genes_PaxDB])
+
+expression_ratio = log2(PaxDB_ES[shared_genes_PaxDB,4] / rowMeans(data_RNA[shared_genes_PaxDB,]))
+
+function_to_optimize <- function(data, par){-cor.test((par[1]*data[,1])+(par[2]*data[,2]), data[,3], method='spearman')$estimate}
+data_for_optimization = cbind(data_residuals_RNA[shared_genes_PaxDB], expression_ratio[shared_genes_PaxDB], data_residuals_protein[shared_genes_PaxDB])
+para = optim(c(1,1), function_to_optimize, data=data_for_optimization, method="SANN")$par; para # used to be SANN
+
+```
+
+## A
+```{r plot figure 4A , echo=FALSE, warning= FALSE}
+
+dec_col <- rbPal(100)[as.numeric(cut(rank(data_residuals_RNA), breaks = 100))]
+plot(log(data_median_RNA)[names(data_residuals_RNA)], log(data_variation_RNA)[names(data_residuals_RNA)], col=dec_col, pch=16, frame.plot=F, xlab='Mean RNA expression (RPKM)', ylab='RNA expression noise (CV^2)', main='Gene expression and gene expression noise', cex=1.5)
+points(log(data_median_RNA)[names(data_residuals_RNA)], log(data_variation_RNA)[names(data_residuals_RNA)], cex=1.5, lwd=0.5)
+#abline(lts[1], lts[2], lty='dotted')
+text(log(data_median_RNA)[names(data_residuals_RNA)], log(data_variation_RNA)[names(data_residuals_RNA)], names(data_residuals_RNA), pos=1)
+legend("bottomleft", inset=0.05, legend=c("highly variable", "stably expressed"), fill=c("coral", "cornflowerblue"), cex=1)
+```
+
+## B
+```{r plot figure 4B, echo=FALSE, warning= FALSE}
+dec_col <- rbPal(100)[as.numeric(cut(rank(data_residuals_protein), breaks = 100))]
+plot(log(data_median_protein)[names(data_residuals_protein)], log(data_variation_protein)[names(data_residuals_protein)], col=dec_col, pch=16, frame.plot=F, xlab='Mean protein expression (2^dCq)', ylab='protein expression noise (CV^2)', main='Gene expression and gene expression noise', cex=1.5)
+points(log(data_median_protein)[names(data_residuals_protein)], log(data_variation_protein)[names(data_residuals_protein)], cex=1.5, lwd=0.5)
+#abline(lts[1], lts[2], lty='dotted')
+text(log(data_median_protein)[names(data_residuals_protein)], log(data_variation_protein)[names(data_residuals_protein)], names(data_residuals_protein), pos=1)
+legend("bottomleft", inset=0.05, legend=c("highly variable", "stably expressed"), fill=c("coral", "cornflowerblue"), cex=1)
+```
+
+
+## C
+
+```{r plot figure 4C, echo=FALSE, warning= FALSE}
+
+shared_genes = intersect(names(data_residuals_RNA), names(data_residuals_protein))
+rho = round(cor.test(data_residuals_RNA[shared_genes], data_residuals_protein[shared_genes], method='spearman')$estimate,3)
+rho2 = round(cor.test(data_residuals_RNA[shared_genes_PaxDB], data_residuals_protein[shared_genes_PaxDB], method='spearman')$estimate,3)
+plot(data_residuals_RNA[shared_genes], data_residuals_protein[shared_genes], frame.plot=F, pch=16, xlab='normalized RNA expression variation (A.U.)', ylab='normalized protein expression variation (A.U.)', main=paste('Gene expression variation\nrho_1: ',rho,"; rho_2:",rho2,sep=''),  cex=1.5, col="grey")
+points(data_residuals_RNA[shared_genes], data_residuals_protein[shared_genes], cex=1.5, lwd=0.5)
+points(data_residuals_RNA[shared_genes_PaxDB], data_residuals_protein[shared_genes_PaxDB], cex=1.5, pch=16)
+lts = least_total_squares(data_residuals_RNA[shared_genes], data_residuals_protein[shared_genes]); inter = lts[1]; slope = lts[2]
+abline(inter, slope, lty='dotted')
+text(data_residuals_RNA[shared_genes], data_residuals_protein[shared_genes], shared_genes, pos=1)
+```
+
+
+## D
+
+```{r plot figure 4D, echo=FALSE, warning= FALSE}
+
+shared_genes_PaxDB = intersect(shared_genes, rownames(PaxDB_ES))
+expression_ratio = log2(PaxDB_ES[shared_genes_PaxDB,4] / rowMeans(data_RNA[shared_genes_PaxDB,]))
+
+shared_genes = intersect(intersect(names(data_residuals_RNA), names(data_residuals_protein)), names(expression_ratio))
+rho = round(cor.test(data_residuals_RNA[shared_genes]+para[2]/para[1]*expression_ratio[shared_genes], data_residuals_protein[shared_genes], method='spearman')$estimate,3)
+
+plot(data_residuals_RNA[shared_genes]+para[2]/para[1]*expression_ratio[shared_genes], data_residuals_protein[shared_genes], pch=16, cex=1.5, frame.plot=F, col="grey", xlab='Combined RNA normalized variation and translation rate (A.U.)', ylab='Normalized protein expression variation (A.U.)', main=paste('Translation of gene expression variation\nrho: ',rho,sep=''))#, ylim=c(-1.5,1.5))#, xlim=c(-0.5,4.5))
+points(data_residuals_RNA[shared_genes]+para[2]/para[1]*expression_ratio[shared_genes], data_residuals_protein[shared_genes], cex=1.5, lwd=0.5, pch=16)
+lts = least_total_squares(data_residuals_RNA[shared_genes]+para[2]/para[1]*expression_ratio[shared_genes], data_residuals_protein[shared_genes]); inter = lts[1]; slope = lts[2]
+abline(inter, slope, lty='dotted')
+text(data_residuals_RNA[shared_genes]+para[2]/para[1]*expression_ratio[shared_genes],  data_residuals_protein[shared_genes], shared_genes, pos=1)
+
+```
+
+
+
+
+
+ 
 

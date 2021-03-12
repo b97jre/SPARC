@@ -30,7 +30,6 @@ plotExpressionViolinPlotTitle  <- function(expressionInfo2,protein, moleculePale
     scale_fill_manual(values=moleculePalette)+
     geom_point(data =expressionInfoGene[expressionInfoGene$type == "FACS",],aes (x = time, y = expression),shape = 21,colour = "white", fill = "black", size = 1, stroke = 1) +
     facet_grid(.~molecule) +  
-    theme(legend.position="none")+ 
     theme_bw() + 
     theme(panel.border = element_blank(), 
           panel.grid.major = element_blank(),
@@ -165,5 +164,126 @@ plotPseudotimeFigure  <- function(expressionInfo2,protein, timePalette){
   
   
 }
+
+getROCinfo <- function(genie3DF ,TF = "POU5F1", molecule = "RNA", time = "All", FPR = 0.1, regulation = "cisRegulated_POU5F1"){
+  ROCit_obj <- rocit( score =genie3DF[["score"]],
+                      class=genie3DF[[regulation]])
+  
+  ROCplotInfo = data.frame(time = time, molecule = molecule, TPR = ROCit_obj$TPR, FPR = ROCit_obj$FPR)
+  
+  InfoPlot = plot(ROCit_obj)
+  ksInfo = ksplot(ROCit_obj)
+  
+  
+  Youden  = data.frame(time = time, molecule = molecule,  
+                       TPR = InfoPlot$`optimal Youden Index point`[3] ,
+                       FPR = InfoPlot$`optimal Youden Index point`[2],
+                       YoudenCutoff = InfoPlot$`optimal Youden Index point`[4],
+                       ksCutoff = ksInfo$`KS Cutoff`,
+                       AUC = ROCit_obj$AUC,
+                       Neg_count = ROCit_obj$neg_count,
+                       hardCutOff = ROCit_obj$Cutoff[sum(ROCit_obj$FPR <FPR)],
+                       hardTPR = ROCit_obj$TPR[sum(ROCit_obj$FPR < FPR)], 
+                       FalsePositive = sum(ROCit_obj$FPR < FPR)
+  )
+  ROCInfo = list(ROCplotInfo=ROCplotInfo, Youden =  Youden) 
+  return (ROCInfo)
+  
+}
+
+
+getShuffleAUC <- function(TF_target_scores , TF1 =  "POU5F1" ,
+                          molecule1 = "RNA", time1 = "All",
+                          n =1000, regulation = "POU5F1_targets" ){
+  AUCs = list()
+  genie3DF =  TF_target_scores %>% 
+    filter(method == method1, 
+           molecule == molecule1,
+           time == time1,
+           TF == TF1)
+  genie3DF =  TF_target_scores %>% 
+    filter(method == method1, 
+           molecule == molecule1,
+           time == time1,
+           TF == TF1)
+  
+  
+  for(i in 1:n){
+    rows <- sample(nrow(genie3DF), replace = FALSE)
+    shuffleCis=genie3DF[[regulation]][rows]
+    scores = genie3DF[["score"]]
+
+    ROCit_obj <- rocit( score =scores,
+                        class=shuffleCis)
+    AUCs[i] = ROCit_obj$AUC
+  }    
+  
+  DF = t(data.frame(AUCs))
+  permuted = data.frame(time = time1 ,
+                        molecule = molecule1,
+                        TF = TF1,
+                        AUC = DF[,1],
+                        type = "permuted"
+  )
+  
+  
+  
+  return (permuted)
+}
+
+
+plotScatterPlot <- function(ExpressionInfo, TF1, target1 , timePalette = "#009E73"){
+  
+  TF_target = ExpressionInfo %>% filter(target == target1 & TF == TF1) 
+  TDGF1_protein = ggscatter(TF_target, x ="TF_expression", y = "Target_expression", 
+                            color =timePalette  ,
+                            add = "reg.line",
+                            add.params = list(color = "blue", fill = "lightgray"), # Customize reg. line
+                            conf.int = TRUE, 
+                            cor.coef = TRUE, 
+                            cor.coeff.args = list(method = "pearson",label.sep = "\n",
+                                                  label.x.npc = "left", label.y.npc = "top"),
+                            cor.method = "pearson",
+                            xlab = TF1, ylab = paste(target1,"RNA", sep=" "))
+  
+}
+
+
+
+own_residuals <- function(x, y, log=F, p=1, own_weights=F, return_labels=F, labels=c())
+{
+  filter = is.na(x) | is.na(y) | is.infinite(x) | is.infinite(y) | (x==0); x=x[!filter]; y=y[!filter]; if (own_weights!=F){own_weights=own_weights[!filter]}
+  if (log==T){x = log2(x); y=log2(y)}
+  if (p==1){if (own_weights==F){fit = lm(y ~ x)} else {fit = lm(y ~ x, weights=own_weights)}}
+  if (p==2){if (own_weights==F){fit = lm(y ~ I(x^0) + I(x^1) + I(x^2))} else {fit = lm(y ~ I(x^0) + I(x^1) + I(x^2), weights=own_weights)}}
+  if (p==3){if (own_weights==F){fit = lm(y ~ I(x^0) + I(x^1) + I(x^2) + I(x^3))} else {fit = lm(y ~ I(x^0) + I(x^1) + I(x^2) + I(x^3), weights=own_weights)}}
+  if (p==4){if (own_weights==F){fit = lm(y ~ I(x^0) + I(x^1) + I(x^2) + I(x^3) + I(x^4))} else {fit = lm(y ~ I(x^0) + I(x^1) + I(x^2) + I(x^3) + I(x^4), weights=own_weights)}}
+  if (p==5){if (own_weights==F){fit = lm(y ~ I(x^0) + I(x^1) + I(x^2) + I(x^3) + I(x^4) + I(x^5))} else {fit = lm(y ~ I(x^0) + I(x^1) + I(x^2) + I(x^3) + I(x^4) + I(x^5), weights=own_weights)}}
+  if (p==6){if (own_weights==F){fit = lm(y ~ I(x^0) + I(x^1) + I(x^2) + I(x^3) + I(x^4) + I(x^5) + I(x^6))} else {fit = lm(y ~ I(x^0) + I(x^1) + I(x^2) + I(x^3) + I(x^4) + I(x^5) + I(x^6), weights=own_weights)}}
+  if (p==7){if (own_weights==F){fit = lm(y ~ I(x^0) + I(x^1) + I(x^2) + I(x^3) + I(x^4) + I(x^5) + I(x^6) + I(x^7))} else {fit = lm(y ~ I(x^0) + I(x^1) + I(x^2) + I(x^3) + I(x^4) + I(x^5) + I(x^6) + I(x^7), weights=own_weights)}}
+  if (!return_labels)
+  {
+    if (log==T){return(list(2**x, residuals(fit)))}
+    else{return(list(x, residuals(fit)))}
+  }
+  else
+  {
+    names(x) = labels[!filter]
+    z = residuals(fit)
+    names(z) = labels[!filter]
+    if (log==T){return(list(2**x, z))}
+    else{return(list(x, z))}    
+  }
+}
+
+least_total_squares <- function(x, y)
+{
+  filter = (!is.na(x)) & (!is.na(y)); x = x[filter]; y = y[filter]
+  vector <- prcomp(cbind(x, y))$rotation
+  beta <- (-vector[(-ncol(vector)),ncol(vector)] / vector[ncol(vector),ncol(vector)])
+  inter <- mean(y) - beta * mean(x)
+  return(c(inter, beta))
+}
+
 
 

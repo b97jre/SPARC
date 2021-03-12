@@ -1,0 +1,128 @@
+---
+title: "Figures"
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      
+      collapsed: no
+      smooth_scroll: no
+      fig_caption: false
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    fig_caption: false
+params:
+  sampleInfo: ../data/sampleInfo.txt
+  geneInfo: ../data/geneInfo.txt
+  RPKMInfo: ../data/RPKM.log.tsv
+  proteinData_QC: ../data/protein.cp.All.QC.txt
+  proteinData_QC_info: ../data/protein.cp.All.QC.info
+  protein_RNA_expression: ../data/expression.protein.RNA.tsv
+  sampleInfo_sc: ../data/sampleInfo.SC.txt
+  figuresDir: ../results/figures
+  figure1AB: ../results/figures/Figures/Figure1/Reimegard_Figure1_A_B.png
+  POU5F1Targets: AK4,DHRS3,DUSP6,KLHL4,OTX2,PRR14L,TDGF1,WLS
+---
+
+````{r setup, include=FALSE}
+
+library(ggrepel)
+library(kableExtra)
+library(tidyverse)
+
+library(ggpubr)
+library(cowplot) 
+library(gridExtra)
+
+library(SCORPIUS)
+library(patchwork)
+library(png)
+
+library(GENIE3)
+
+library(ROCit)
+library(patchwork)
+
+
+
+
+source("supplementaryFunctions.R")
+
+
+cbPalette <- c("#FF0000","#0000FF", "#0072B2", "#F0E442" , "#CC79A7", "#999999", "#E69F00", "#56B4E9")
+
+timePalette <- c("#009E73","#D55E00", "#0072B2","#000000", "#F0E442" , "#CC79A7", "#E69F00", "#56B4E9")
+moleculePalette <- c("#FF0000","#0000FF")
+cellCyclePallete <-c("#999999" , "#CC79A7", "#E69F00")
+
+````
+
+
+```{r load sampleInfo geneInfo and RNA expression matrix, include=FALSE}
+
+
+sampleInfo = read.table(params$sampleInfo, sep = "\t", quote = "",
+            header = TRUE, stringsAsFactors = FALSE)
+geneInfo = read.table(params$geneInfo, sep = "\t", quote = "",
+            header = TRUE, stringsAsFactors = FALSE)
+
+
+lgRPKM.QC = read.table(params$RPKMInfo, sep = "\t", quote = "",
+            header = TRUE, stringsAsFactors = FALSE)
+
+
+expression.protein.RNA = read_tsv(file = params$protein_RNA_expression, col_names = T)
+# Remove all genes that is not expressed in at least 30
+geneInfo.QC = geneInfo %>% 
+  filter(external_gene_name %in% rownames(lgRPKM.QC))
+
+POU5F1Targets = as.vector(strsplit(params$POU5F1Targets,split = ",") )[[1]]
+
+
+
+
+```
+# Figure 1
+
+
+
+```{r filter sampels that are not found in both , include = FALSE }
+genes = c("SOX2","POU5F1","EPCAM","TP53")
+
+
+SOX2 = plotExpressionViolinPlotTitle(expressionInfo2 = expression.protein.RNA, 
+                           protein = "SOX2",
+                           moleculePalette = moleculePalette
+                            )
+
+POU5F1 = plotExpressionViolinPlotTitle(expressionInfo2 = expression.protein.RNA, 
+                           protein = "POU5F1",
+                           moleculePalette = moleculePalette
+                            )
+
+EPCAM = plotExpressionViolinPlotTitle(expressionInfo2 = expression.protein.RNA, 
+                           protein = "EPCAM",
+                           moleculePalette = moleculePalette
+                            )
+
+TP53 = plotExpressionViolinPlotTitle(expressionInfo2 = expression.protein.RNA, 
+                           protein = "TP53",
+                           moleculePalette = moleculePalette
+                            )
+
+
+AB = ggplot(mapping = aes(1:10, 1:10)) +
+  annotation_raster(readPNG(source = params$figure1AB), xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) 
+```
+
+```{r plot figure 1}
+
+AB|(SOX2+POU5F1) /(EPCAM + TP53)
+
+
+```
+
+
+
+

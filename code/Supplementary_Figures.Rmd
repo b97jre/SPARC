@@ -27,7 +27,7 @@ params:
   
 ---
 
-````{r setup}
+````{r setup, include=FALSE}
 
 library(ggrepel)
 library(kableExtra)
@@ -49,18 +49,6 @@ cellCyclePallete <-c("#999999" , "#CC79A7", "#E69F00")
 
 ````
 
-
-
-```{r load some functions,, include=FALSE}
-
-#source("Rscripts/functions.R")
-#source("Rscripts/pca_plotting_v2.R")
-#library(ineq)
-#library(reshape2)
-
-
-
-```
 
 ```{r load sampleInfo geneInfo and RNA expression matrix, include=FALSE}
 
@@ -163,26 +151,26 @@ for(i in 1:length(geneInfo$protein)){
   ggdraw(scatterDensityPlotAll)
   filename = paste(params$figuresDir, "scatterPlots",
                    paste(protein,"pdf", sep = "."),sep = "/")
-  ggsave(filename,  width = 7, height = 7)
+ # #ggsave(filename,  width = 7, height = 7)
   scatterPlots[i] = list(scatterDensityPlotAll)
 
   scatterDensityPlot1 = scatterDensityPlot(expressionInfoSpec = expressionInfoSpec[expressionInfoSpec$time == "0h", ],protein,timePalette[1] )
     ggdraw(scatterDensityPlot1)
   filename = paste(params$figuresDir, "scatterPlots",
                    paste(protein,"0h","pdf", sep = "."),sep = "/")
-  ggsave(filename,  width = 7, height = 7)
+  #ggsave(filename,  width = 7, height = 7)
 
   scatterDensityPlot2 = scatterDensityPlot(expressionInfoSpec = expressionInfoSpec[expressionInfoSpec$time == "24h", ],protein,timePalette[2])
   ggdraw(scatterDensityPlot2)
   filename = paste(params$figuresDir, "scatterPlots",
                    paste(protein,"24h","pdf", sep = "."),sep = "/")
-  ggsave(filename,  width = 7, height = 7)
+  #ggsave(filename,  width = 7, height = 7)
   
   scatterDensityPlot3 = scatterDensityPlot(expressionInfoSpec = expressionInfoSpec[expressionInfoSpec$time == "48h", ],protein,timePalette[3])
   ggdraw(scatterDensityPlot3)
   filename = paste(params$figuresDir, "scatterPlots",
                    paste(protein,"48h","pdf", sep = "."),sep = "/")
-  ggsave(filename,  width = 7, height = 7)
+  #ggsave(filename,  width = 7, height = 7)
   
     
 }
@@ -205,21 +193,28 @@ for(i in 1:length(geneInfo$protein)){
   
   filename = paste(params$figuresDir,"violinPlots",
                    paste(protein,"pdf", sep = "."),sep = "/")
-  ggsave(filename,  width = 7, height = 7)
+  #ggsave(filename,  width = 7, height = 7)
   plot = plot + ggtitle(protein)+theme(axis.text.x = element_text(angle = 90, hjust = 1), text = element_text(size=7))+
     theme(axis.text.x = element_text(size = 7, angle = 90, hjust = 1, vjust = .5),
         axis.text.y = element_text(size = 7, angle = 0),  
         axis.title.x = element_text(size = 8),
         axis.title.y = element_text(size = 8),
-        plot.title = element_text(size=10))
+        plot.title = element_text(size=10)) + 
+    theme(legend.title = element_blank())
+    
   violinPlots[i] = list(plot)
   
 }
 
 
 
-      
-       
+plot + ggtitle(protein)+theme(axis.text.x = element_text(angle = 90, hjust = 1), text = element_text(size=7))+
+    theme(axis.text.x = element_text(size = 7, angle = 90, hjust = 1, vjust = .5),
+        axis.text.y = element_text(size = 7, angle = 0),  
+        axis.title.x = element_text(size = 8),
+        axis.title.y = element_text(size = 8),
+        plot.title = element_text(size=10)) + 
+    theme(legend.position="none")      
 ```
 
 
@@ -244,15 +239,15 @@ for(i in 1:length(geneInfo$protein)){
   plot
   filename = paste(params$figuresDir, "pseudotime",
                    paste(protein,"pdf", sep = "."),sep = "/")
-  ggsave(filename, width = 7, height = 7)
+  #ggsave(filename, width = 7, height = 7)
   pseudoTimeFigues[i] = list(plot)
 
 }
 
 
 
-filename = paste(params$storageDir, "figures/pseudotime/pseudotime_multiple.pdf",sep = "/")
-ggsave(filename,,width = 4.51, height = 7.29)
+#filename = paste(params$storageDir, "figures/pseudotime/pseudotime_multiple.pdf",sep = "/")
+##ggsave(filename,,width = 4.51, height = 7.29)
 ```
 
 
@@ -269,7 +264,7 @@ ggsave(filename,,width = 4.51, height = 7.29)
 \pagebreak
 ## Supplementary figure 2
 ```{r  violin plots, echo=FALSE}
-marrangeGrob(grobs = violinPlots, nrow=3, ncol=3) 
+marrangeGrob(grobs = violinPlots, nrow=2, ncol=3) 
 ```
 
 
@@ -331,7 +326,8 @@ textLocation = data.frame(
   y = c(max (Fig5a_data$lmRNA ) ,max (Fig5a_data$lmRNA )- ((max (Fig5a_data$lmRNA ) - min (Fig5a_data$lmRNA )) / 15))) 
 
   
-
+#linearMod <- lm(lmRNA ~ lmProtein, data=Fig5a_data)
+#summary(linearMod)
 
 
 correlation = cor.test(Fig5a_data$lmRNA,Fig5a_data$lmProtein, 
@@ -370,7 +366,7 @@ Pearson correlation distribution between transcription factors NOTCH1, POUF51, S
 \pagebreak
 ## Supplementary figure 8
 
-![](../results/figures/supplementaryFigures/S7.png)
+![](../results/figures/supplementaryFigures/S8.png)
 
 **Figure S8: Pattern of gene expression variation**
 
